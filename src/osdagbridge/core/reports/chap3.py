@@ -6,6 +6,8 @@
 from osdagbridge.core.utils.common import (
     KEY_CB_LOAD,
     KEY_LL_CUSTOM_VEHICLES,
+    KEY_LL_CURVE_RADIUS,
+    KEY_LL_DESIGN_SPEED,
     KEY_LL_FOOTPATH_PRESSURE_MODE,
     KEY_LL_FOOTPATH_PRESSURE_VALUE,
     KEY_LL_IRC_70R_BOGIE,
@@ -88,12 +90,14 @@ def ch3_loads(input_dict):
     from osdagbridge.core.utils.codes.irc6_2017 import IRC6_2017
     span = input_dict.get(KEY_SPAN)
     impact_factor_str = ""
+    impact_by_vehicle = {}
     if span not in (None, ""):
         try:
             span_m = float(span)
             factors = []
             if input_dict.get(KEY_LL_IRC_CLASS_A):
                 im_a = IRC6_2017.cl_208_2_impact_factor(span_m)
+                impact_by_vehicle["Class A"] = f"{1.0 + im_a:.3f}"
                 factors.append(f"Class A: {1.0 + im_a:.3f}")
             is_wheeled_heavy = (
                 input_dict.get(KEY_LL_IRC_70R_WHEELED) or 
@@ -106,6 +110,9 @@ def ch3_loads(input_dict):
             )
             if is_wheeled_heavy or is_tracked_heavy:
                 im_aa = IRC6_2017.cl_208_3_impact_factor(span_m)
+                for selected in vehicles:
+                    if any(kind in selected for kind in ("70R", "AA")):
+                        impact_by_vehicle[selected] = f"{1.0 + im_aa:.3f}"
                 factors.append(f"Class AA/70R: {1.0 + im_aa:.3f}")
             
             if factors:
@@ -119,16 +126,54 @@ def ch3_loads(input_dict):
 
     lanes = input_dict.get(KEY_WC_LD_LANE_TABLE_COUNT)
     braking_force_str = ""
+    braking_force_value = "N/A"
     if lanes not in (None, ""):
         try:
             lanes_int = int(lanes)
             braking_force_t = IRC6_2017.cl_211_2_braking_force(lanes_int)
             braking_force_kN = braking_force_t * 9.81
             braking_force_str = f"{braking_force_kN:.2f} kN ({braking_force_t:.2f} tonnes)"
+            braking_force_value = f"{braking_force_kN:.2f}"
         except Exception:
             braking_force_str = "N/A"
     else:
         braking_force_str = "N/A"
+
+    centrifugal_by_vehicle = {}
+    try:
+        speed_kmh = float(input_dict.get(KEY_LL_DESIGN_SPEED))
+        radius_m = float(input_dict.get(KEY_LL_CURVE_RADIUS))
+        if speed_kmh > 0 and radius_m > 0:
+            factor = speed_kmh ** 2 / (127.0 * radius_m)
+
+            def _max_axle_cf_kN(axle_loads_kN):
+                axle_tonnes = max(float(value) for value in axle_loads_kN) / 9.81
+                return f"{axle_tonnes * factor * 9.81:.2f}"
+
+            if input_dict.get(KEY_LL_IRC_CLASS_A):
+                data = IRC6_2017.cl_204_1_ClassA_vehicle()
+                axle_loads_kN = [value / 1000.0 for value in data["wheel_loads"]]
+                centrifugal_by_vehicle["Class A"] = (_max_axle_cf_kN(axle_loads_kN), "kN/axle")
+            if input_dict.get(KEY_LL_IRC_70R_WHEELED):
+                data = IRC6_2017.cl_204_1_Class70R_vehicle_wheel()
+                axle_loads_kN = [value / 1000.0 for value in data["wheel_loads"]]
+                centrifugal_by_vehicle["Class 70R (Wheeled)"] = (_max_axle_cf_kN(axle_loads_kN), "kN/axle")
+            if input_dict.get(KEY_LL_IRC_70R_TRACKED):
+                data = IRC6_2017.cl_204_1_Class70R_vehicle_track()
+                track_load_t_per_m = float(data["wheel_loads_udl"]) / 9810.0
+                cf_kN_per_m = track_load_t_per_m * factor * 9.81
+                centrifugal_by_vehicle["Class 70R (Tracked)"] = (f"{cf_kN_per_m:.2f}", "kN/m")
+            custom = input_dict.get(KEY_LL_CUSTOM_VEHICLES) or []
+            for vehicle in custom:
+                if not isinstance(vehicle, dict):
+                    continue
+                axle_loads = vehicle.get("axle_loads") or []
+                if axle_loads and vehicle.get("name"):
+                    centrifugal_by_vehicle[str(vehicle["name"])] = (
+                        _max_axle_cf_kN(axle_loads), "kN/axle"
+                    )
+    except (TypeError, ValueError, ZeroDivisionError, KeyError):
+        centrifugal_by_vehicle = {}
 
     fp_mode  = input_dict.get(KEY_LL_FOOTPATH_PRESSURE_MODE, "")
     fp_value = input_dict.get(KEY_LL_FOOTPATH_PRESSURE_VALUE, "")
@@ -141,6 +186,17 @@ def ch3_loads(input_dict):
         fp_str = f"{fp_value} kN/m²"
     else:
         fp_str = "N/A"
+    footpath_value = fp_str.split(" kN/m²", 1)[0] if " kN/m²" in fp_str else "N/A"
+
+    vehicle_rows = []
+    for vehicle in vehicles:
+        impact = impact_by_vehicle.get(vehicle, "N/A")
+        centrifugal, centrifugal_unit = centrifugal_by_vehicle.get(vehicle, ("N/A", "kN/axle"))
+        vehicle_rows.append(_tex(vehicle) + " & " + _tex(impact) + " & " + _tex(braking_force_value)
+                            + r" & kN & " + _tex(centrifugal) + " & " + _tex(centrifugal_unit)
+                            + r" \\[6pt]" + "\n\\hline")
+    if not vehicle_rows:
+        vehicle_rows.append(r"None selected & --- & --- & kN & --- & kN \\[6pt]" + "\n\\hline")
 
     # Vz / Pz — prefer stored computed values; fall back to IRC6 Table 12
     vz_val = input_dict.get(KEY_WL_HOURLY_MEAN_WIND)
@@ -300,18 +356,22 @@ This section summarizes all loads applied to the bridge and the load combination
 \end{longtable}
 
 \vspace{1em}
-\begin{longtable}{|L{5.5cm}|p{10.0cm}|}
-\caption{\textbf{Live Loads (LL)}}
+\begin{longtable}{|L{4.2cm}|C{1.7cm}|C{2.2cm}|C{1.2cm}|C{2.5cm}|C{1.2cm}|}
+\caption{\textbf{Vehicle Live Load Parameters (IRC 6)}}
 \hline
-\textbf{parameter} & \textbf{value} \\
+\textbf{Vehicle class} & \textbf{Impact factor} & \textbf{Braking load} & \textbf{Unit} & \textbf{Centrifugal force} & \textbf{Unit} \\
 \hline
-\textnormal{Vehicles Considered} & """ + _tex(vehicles_str) + r""" \\[6pt]
+""" + "\n".join(vehicle_rows) + r"""
+\end{longtable}
+\noindent\textit{Centrifugal force is calculated as $C=WV^2/(127R)$ per IRC 6 Cl. 212.2; no impact allowance is added per Cl. 212.4. Values are shown only when design speed and curve radius are supplied.}
+
+\vspace{0.6em}
+\begin{longtable}{|L{5.5cm}|C{2.3cm}|C{3.2cm}|L{3.2cm}|}
+\caption{\textbf{Footpath Live Load}}
 \hline
-\textnormal{Impact Factor (IRC 6)} & """ + _tex(impact_factor_str) + r""" \\[6pt]
+\textbf{Load type} & \textbf{Pressure} & \textbf{Unit} & \textbf{Basis} \\
 \hline
-\textnormal{Braking Load (IRC 6)} & """ + _tex(braking_force_str) + r""" \\[6pt]
-\hline
-\textnormal{Footpath Live Load (if applicable)} & """ + (_render_value(input_dict, KEY_LL_FOOTPATH_PRESSURE_VALUE, ' kN/m\\textsuperscript{2}')) + r""" \\[6pt]
+Footpath live load & """ + _tex(footpath_value) + r""" & kN/m\textsuperscript{2} & """ + (_tex(fp_mode) if fp_mode else "User input") + r""" \\[6pt]
 \hline
 \end{longtable}
 

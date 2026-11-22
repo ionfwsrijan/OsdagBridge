@@ -141,11 +141,11 @@ from osdagbridge.core.utils.common import (
     KEY_UTIL_SHEAR
 )
 
-from osdagbridge.core.reports.report_utils import _tex, _render_value, get_girder_entries
+from osdagbridge.core.reports.report_utils import _tex, _render_value, _fig_embed, get_girder_entries
 
 if TYPE_CHECKING:
     pass
-def ch5_design_checks(checks_data, bridge) -> str:
+def ch5_design_checks(checks_data, bridge, utilization_chart=None) -> str:
     """Chapter 5 — Design Checks.
 
     Parameters
@@ -166,37 +166,32 @@ def ch5_design_checks(checks_data, bridge) -> str:
     # dict when deck design has not been run. Look up with deck_rpt.get(KEY_...).
     deck_rpt = bridge.output_dict.get("deck_report_values", {}) or {}
 
-    # Generate Table 5.1 rows (per-girder section properties)
+    # Avoid a 13-row multirow label: longtable can split the property rows over
+    # pages, but a multirow cell cannot split with them and used to spill into
+    # the footer. Repeat the girder label on each independent row instead.
+    t51_properties = [
+        (r"\textnormal{Depth, D (mm)}", KEY_SD_TOTAL_DEPTH),
+        (r"\textnormal{Top Flange Width, $b_f$ (mm)}", KEY_SD_TOP_FLANGE_WIDTH),
+        (r"\textnormal{Bottom Flange Width, $b_f$ (mm)}", KEY_SD_BOTTOM_FLANGE_WIDTH),
+        (r"\textnormal{Top Flange Thickness, $t_f$ (mm)}", KEY_SD_TOP_FLANGE_THICKNESS),
+        (r"\textnormal{Bottom Flange Thickness, $t_f$ (mm)}", KEY_SD_BOTTOM_FLANGE_THICKNESS),
+        (r"\textnormal{Web Thickness, $t_w$ (mm)}", KEY_SD_WEB_THICKNESS),
+        (r"\textnormal{Gross Area, A (cm$^2$)}", KEY_SD_SECTION_PROP_AREA),
+        (r"\textnormal{Moment of Inertia, $I_z$ (cm$^4$)}", KEY_SD_SECTION_PROP_IZ),
+        (r"\textnormal{Elastic Section Modulus, $Z_{ez}$ (cm$^3$)}", KEY_SD_SECTION_PROP_ZZ),
+        (r"\textnormal{Plastic Section Modulus, $Z_{pz}$ (cm$^3$)}", KEY_SD_SECTION_PROP_ZUZ),
+        (r"\textnormal{Effective Slab Width, $b_{eff}$ (mm)}", KEY_SD_EFFECTIVE_SLAB_WIDTH),
+        (r"\textnormal{Transformed Composite $I_z$ (cm$^4$)}", KEY_SD_COMPOSITE_IZ),
+        (r"\textnormal{Depth to Plastic Neutral Axis (mm)}", KEY_SD_PNA_DEPTH),
+    ]
     t51_rows = []
     for lbl, _ in girder_entries:
-        t51_rows.append(
-            r"\multirow{13}{*}{\makecell{" + lbl + r"""}} & \textnormal{Depth, D (mm)} & """ + _render_value(bridge.output_dict, KEY_SD_TOTAL_DEPTH) + r""" \\[6pt]
-\cline{2-3}
- & \textnormal{Top Flange Width, $b_f$ (mm)} & """ + _render_value(bridge.output_dict, KEY_SD_TOP_FLANGE_WIDTH) + r""" \\[6pt]
-\cline{2-3}
- & \textnormal{Bottom Flange Width, $b_f$ (mm)} & """ + _render_value(bridge.output_dict, KEY_SD_BOTTOM_FLANGE_WIDTH) + r""" \\[6pt]
-\cline{2-3}
- & \textnormal{Top Flange Thickness, $t_f$ (mm)} & """ + _render_value(bridge.output_dict, KEY_SD_TOP_FLANGE_THICKNESS) + r""" \\[6pt]
-\cline{2-3}
- & \textnormal{Bottom Flange Thickness, $t_f$ (mm)} & """ + _render_value(bridge.output_dict, KEY_SD_BOTTOM_FLANGE_THICKNESS) + r""" \\[6pt]
-\cline{2-3}
- & \textnormal{Web Thickness, $t_w$ (mm)} & """ + _render_value(bridge.output_dict, KEY_SD_WEB_THICKNESS) + r""" \\[6pt]
-\cline{2-3}
- & \textnormal{Gross Area, A (cm$^2$)} & """ + _render_value(bridge.output_dict, KEY_SD_SECTION_PROP_AREA) + r""" \\[6pt]
-\cline{2-3}
- & \textnormal{Moment of Inertia, $I_z$ (cm$^4$)} & """ + _render_value(bridge.output_dict, KEY_SD_SECTION_PROP_IZ) + r""" \\[6pt]
-\cline{2-3}
- & \textnormal{Elastic Section Modulus, $Z_{ez}$ (cm$^3$)} & """ + _render_value(bridge.output_dict, KEY_SD_SECTION_PROP_ZZ) + r""" \\[6pt]
-\cline{2-3}
- & \textnormal{Plastic Section Modulus, $Z_{pz}$ (cm$^3$)} & """ + _render_value(bridge.output_dict, KEY_SD_SECTION_PROP_ZUZ) + r""" \\[6pt]
-\cline{2-3}
- & \textnormal{Effective Slab Width, $b_{eff}$ (mm)} & """ + _render_value(bridge.output_dict, KEY_SD_EFFECTIVE_SLAB_WIDTH) + r""" \\[6pt]
-\cline{2-3}
- & \textnormal{Transformed Composite $I_z$ (cm$^4$)} & """ + _render_value(bridge.output_dict, KEY_SD_COMPOSITE_IZ) + r""" \\[6pt]
-\cline{2-3}
- & \textnormal{Depth to Plastic Neutral Axis (mm)} & """ + _render_value(bridge.output_dict, KEY_SD_PNA_DEPTH) + r""" \\[6pt]
-\hline"""
-        )
+        for property_label, property_key in t51_properties:
+            t51_rows.append(
+                _tex(lbl) + " & " + property_label + " & "
+                + _render_value(bridge.output_dict, property_key)
+                + r" \\[6pt]" + "\n\\hline"
+            )
     t51_content = "\n".join(t51_rows)
 
     # Generate Table 5.2 rows
@@ -218,7 +213,7 @@ def ch5_design_checks(checks_data, bridge) -> str:
     try:
         _flex_ur = float(bridge.output_dict.get(KEY_UTIL_FLEXURE)) / 100.0
         _flex_ur_str = f"{_flex_ur:.2f}"
-        _flex_status = "PASS" if _flex_ur <= 1.0 else r"\textcolor{red}{FAIL}"
+        _flex_status = "PASS" if _flex_ur <= 1.0 else r"\textcolor{reportFail}{FAIL}"
     except (TypeError, ValueError):
         _flex_ur_str = ""
         _flex_status = "---"
@@ -240,7 +235,7 @@ def ch5_design_checks(checks_data, bridge) -> str:
     try:
         _shear_ur = float(bridge.output_dict.get(KEY_UTIL_SHEAR)) / 100.0
         _shear_ur_str = f"{_shear_ur:.2f}"
-        _shear_status = "PASS" if _shear_ur <= 1.0 else r"\textcolor{red}{FAIL}"
+        _shear_status = "PASS" if _shear_ur <= 1.0 else r"\textcolor{reportFail}{FAIL}"
     except (TypeError, ValueError):
         _shear_ur_str = ""
         _shear_status = "---"
@@ -273,7 +268,7 @@ def ch5_design_checks(checks_data, bridge) -> str:
             return "PASS"
         elif ratio < 1.00:
             return "WARN"
-        return r"\textcolor{red}{FAIL}"
+        return r"\textcolor{reportFail}{FAIL}"
     # M-V interaction UR stored as percent → show ratio (2 dp).
     try:
         _mv_ur = float(bridge.output_dict.get(KEY_UTIL_INTERACTION)) / 100.0
@@ -354,7 +349,7 @@ def ch5_design_checks(checks_data, bridge) -> str:
     # Status: PASS when Provided ≥ Required.
     def _ge_status(provided, required):
         try:
-            return "PASS" if float(provided) >= float(required) else r"\textcolor{red}{FAIL}"
+            return "PASS" if float(provided) >= float(required) else r"\textcolor{reportFail}{FAIL}"
         except (TypeError, ValueError):
             return "---"
     _iys_status = _ge_status(bridge.output_dict.get(KEY_SD_IS_IYS_PROV),
@@ -404,7 +399,7 @@ def ch5_design_checks(checks_data, bridge) -> str:
             return ("N/A", "N/A", "N/A")
         req_s  = f"{_bs_r} kN"
         prov_s = f"{prov} kN"
-        status = "PASS" if float(prov) >= float(_bs_r) else r"\textcolor{red}{FAIL}"
+        status = "PASS" if float(prov) >= float(_bs_r) else r"\textcolor{reportFail}{FAIL}"
         return (req_s, prov_s, status)
     _wb_req, _wb_prov, _wb_st = _bs_check(KEY_SD_BS_FCDW_WB)
     _lc_req, _lc_prov, _lc_st = _bs_check(KEY_SD_BS_FCDW_LC)
@@ -434,7 +429,7 @@ def ch5_design_checks(checks_data, bridge) -> str:
     def _defl_status(actual, allowable):
         """PASS / red FAIL for deflection; '---' when values are missing."""
         try:
-            return "PASS" if float(actual) <= float(allowable) else r"\textcolor{red}{FAIL}"
+            return "PASS" if float(actual) <= float(allowable) else r"\textcolor{reportFail}{FAIL}"
         except (TypeError, ValueError):
             return "---"
 
@@ -492,7 +487,7 @@ def ch5_design_checks(checks_data, bridge) -> str:
 
     def _stress_status(actual, allow):
         try:
-            return "PASS" if float(actual) <= float(allow) else r"\textcolor{red}{FAIL}"
+            return "PASS" if float(actual) <= float(allow) else r"\textcolor{reportFail}{FAIL}"
         except (TypeError, ValueError):
             return "---"
 
@@ -525,7 +520,7 @@ def ch5_design_checks(checks_data, bridge) -> str:
     def _fat_status(s):
         if s is None or str(s).strip() == "":
             return "---"
-        return r"\textcolor{red}{" + str(s) + "}" if "FAIL" in str(s).upper() else str(s)
+        return r"\textcolor{reportFail}{" + str(s) + "}" if "FAIL" in str(s).upper() else str(s)
 
     t512_rows = []
     for _gi, (lbl, _) in enumerate(girder_entries, start=1):
@@ -653,7 +648,7 @@ Fatigue Shear Resistance, $Q_r$ & IRC 22 Table 8 ($\phi d$, $N_{sc}$) & """
     else:
         _ts_ur_str = "---"
     _ts_ok = _dr_sc.get("transverse_shear_ok")
-    _ts_status = (r"\textcolor{red}{FAIL}" if _ts_ok is False else "PASS") if _ts_ok is not None else "---"
+    _ts_status = (r"\textcolor{reportFail}{FAIL}" if _ts_ok is False else "PASS") if _ts_ok is not None else "---"
 
     _ast_req  = _dr_sc.get("Ast_required_cm2_per_m")
     # Provided transverse steel = the deck's main (bottom + top) bars, which run
@@ -737,7 +732,7 @@ Fatigue Shear Resistance, $Q_r$ & IRC 22 Table 8 ($\phi d$, $N_{sc}$) & """
     def get_status_str(slnd_str, limit):
         try:
             v = float(slnd_str)
-            return r"\textcolor{black}{PASS}" if v <= limit else r"\textcolor{red}{FAIL}"
+            return r"\textcolor{black}{PASS}" if v <= limit else r"\textcolor{reportFail}{FAIL}"
         except (ValueError, TypeError):
             return ""
     cb_slenderness_rows = []
@@ -878,7 +873,7 @@ Fatigue Shear Resistance, $Q_r$ & IRC 22 Table 8 ($\phi d$, $N_{sc}$) & """
         except (TypeError, ValueError):
             return ""
         s = f"{f:.2f}"
-        return (r"\textcolor{red}{" + s + "}") if f > 1.0 else s
+        return (r"\textcolor{reportFail}{" + s + "}") if f > 1.0 else s
 
     def _lc_short(lc):
         # Show the full combination expression as-is, e.g.
@@ -975,6 +970,39 @@ Fatigue Shear Resistance, $Q_r$ & IRC 22 Table 8 ($\phi d$, $N_{sc}$) & """
         ratio, sf, lim = best
         return ("---", f"{sf:.1f}", f"{lim:.0f}", _ur_522(ratio))
 
+    def _ed_row(force_type):
+        from osdagbridge.core.bridge_types.plate_girder.results_data import _extract_osdag_summary
+
+        forces = (bridge.output_dict.get("end_diaphragm_forces_dict") or {}).get("pairs") or {}
+        designs = bridge.output_dict.get("end_diaphragm_design_results") or {}
+        best = None
+        for pair, pair_forces in forces.items():
+            for member, force_prefix in (("diagonal", "diag"), ("chord", "chord")):
+                demand = pair_forces.get(f"{force_prefix}_{force_type}_kN")
+                try:
+                    demand = float(demand)
+                except (TypeError, ValueError):
+                    continue
+                raw = ((designs.get(pair) or {}).get(member) or {}).get(force_type) or {}
+                summary = _extract_osdag_summary(raw)
+                capacity = summary.get("capacity_kN")
+                efficiency = summary.get("efficiency")
+                try:
+                    capacity = float(capacity)
+                    ratio = float(efficiency) if efficiency is not None else demand / capacity
+                except (TypeError, ValueError, ZeroDivisionError):
+                    continue
+                if capacity <= 0 or ratio < 0:
+                    continue
+                if best is None or ratio > best[0]:
+                    lc = pair_forces.get(f"{force_prefix}_{force_type}_gov_lc") or "---"
+                    best = (ratio, lc, demand, capacity)
+        if best is None:
+            return ("---", "---", "---", "---")
+        ratio, lc, demand, capacity = best
+        return (_lc_short(lc) if lc != "---" else "---",
+                f"{demand:.2f} kN", f"{capacity:.2f} kN", _ur_522(ratio))
+
     def _row522(label, cells):
         c = [x if x else "---" for x in cells]
         return label + r" & " + r" & ".join(c) + r" \\[6pt]" + "\n\\hline"
@@ -1001,9 +1029,8 @@ Fatigue Shear Resistance, $Q_r$ & IRC 22 Table 8 ($\phi d$, $N_{sc}$) & """
         # Single message spanning the 4 data columns.
         return label + r" & \multicolumn{4}{c|}{" + msg + r"} \\[6pt]" + "\n\\hline"
 
-    # End diaphragm: when configured as Cross Bracing it is designed as bracing
-    # members → mirror the cross-bracing axial rows. For Rolled / Welded beam end
-    # diaphragms the moment/shear design is not implemented yet → show a message.
+    # End diaphragm cross-bracing checks are reported from their own design
+    # results, independently of the bridge's intermediate cross-bracing.
     _ed_type = ""
     for _k, _v in bridge.input_dict.items():
         if str(_k).startswith(KEY_MP_ED_TYPE) and _v:
@@ -1011,8 +1038,8 @@ Fatigue Shear Resistance, $Q_r$ & IRC 22 Table 8 ($\phi d$, $N_{sc}$) & """
             break
     _ed_is_cb = "brac" in _ed_type.strip().lower()
     if _ed_is_cb:
-        _ed_moment_row = _row522(r"End Diaphragm --- Moment", _cb_row("compression"))
-        _ed_shear_row  = _row522(r"End Diaphragm --- Shear",  _cb_row("tension"))
+        _ed_moment_row = _row522(r"End Diaphragm --- Compression", _ed_row("compression"))
+        _ed_shear_row  = _row522(r"End Diaphragm --- Tension", _ed_row("tension"))
     else:
         _ed_msg = r"Rolled / Welded section --- design to be added"
         _ed_moment_row = _row522_msg(r"End Diaphragm --- Moment", _ed_msg)
@@ -1136,11 +1163,14 @@ This section presents all structural design checks performed by OsdagBridge. For
 \begin{longtable}{|C{2.5cm}|L{6.5cm}|>{\arraybackslash}p{6.5cm}|}
 \caption{\textbf{Stiffener Design Summary}}
 \hline
+\textbf{Girder} & \textbf{Check} & \textbf{Value} \\
+\hline
 """ + t57_content + r"""
 \end{longtable}
 """ + t58_block + r"""
 \vspace{1em}
 
+\needspace{12\baselineskip}
 \begin{longtable}{|C{2.5cm}|L{3.5cm}|C{3.5cm}|>{\centering\arraybackslash}p{4.2cm}|C{1.8cm}|}
 \caption{\textbf{End Panel Stiffener Checks}}
 \hline
@@ -1202,8 +1232,7 @@ This section presents all structural design checks performed by OsdagBridge. For
 
 \vspace{1em}
 
-\setlength\LTleft{0pt}
-\setlength\LTright{\fill}
+\ReportLeftAlignedLongTable
 
 \begin{longtable}{|L{3.2cm}|>{\centering\arraybackslash}p{4.3cm}|>{\centering\arraybackslash}p{4.3cm}|C{2.0cm}|}
 \caption{\textbf{Shear Connector Spacing}}
@@ -1408,9 +1437,8 @@ Cross bracing between adjacent plate girders provides lateral stability during c
 
 \vspace{0.4em}
 \noindent
-\setlength{\tabcolsep}{4pt}
-\setlength\LTleft{0pt}
-\setlength\LTright{\fill}
+\ReportCompactTable
+\ReportLeftAlignedLongTable
 
 \begin{longtable}{|C{2.0cm}|L{2.0cm}|L{2.2cm}|C{2.5cm}|C{2.0cm}|C{2.0cm}|}
 \caption{\textbf{Cross Bracing --- Connection and Section Properties}}
@@ -1452,9 +1480,8 @@ End diaphragms at the supports transfer transverse loads to the bearings, restra
 
 \vspace{0.4em}
 \noindent
-\setlength{\tabcolsep}{4pt}
-\setlength{\LTleft}{0pt}
-\setlength{\LTright}{\fill}
+\ReportCompactTable
+\ReportLeftAlignedLongTable
 
 \begin{longtable}{|C{2.0cm}|L{2.0cm}|L{2.2cm}|C{2.5cm}|C{2.0cm}|C{2.0cm}|}
 \caption{\textbf{End Diaphragm --- Connection and Section Properties}}
@@ -1491,6 +1518,7 @@ End diaphragms at the supports transfer transverse loads to the bearings, restra
 \label{sec:overall-summary}
 % ===========================
 
+""" + (_fig_embed(utilization_chart, "Overall utilization ratios for the primary bridge elements", width=r"0.92\textwidth") + "\n" if utilization_chart else "") + r"""
 \vspace{1em}
 \begin{longtable}{|C{3.4cm}|L{4.5cm}|C{2.3cm}|C{2.3cm}|>{\centering\arraybackslash}p{1.6cm}|}
 \caption{\textbf{Overall Design Check Summary --- All Members}}

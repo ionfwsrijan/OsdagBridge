@@ -2686,6 +2686,10 @@ class PlateGirderBridge:
             if not ed_type:
                 continue   # no data for this pair, skip cleanly
             self.output_dict[make_pair_key(KEY_MP_ED_TYPE, pair_id)] = ed_type
+            forces_dict["pairs"][pair] = {
+                "edge_element_count": len(pair_to_elements.get(pair, [])),
+                "chord_length_m": s,
+            }
             
             # -- CASE A: CROSS BRACING DIAPHRAGM --
             if ed_type == "Cross Bracing":
@@ -2746,6 +2750,12 @@ class PlateGirderBridge:
                             chord_comp_lc = lc_str
 
                 pair_forces = {
+                    "edge_element_count": len(elements),
+                    "chord_length_m": s,
+                    "diagonal_length_m": L_d,
+                    "diagonal_count_per_frame": 2,
+                    "top_chord_enabled": top_chord_enabled,
+                    "bottom_chord_enabled": bottom_chord_enabled,
                     "diag_tension_kN": round(diag_tens_max, 3) if diag_tens_max > _tol else None,
                     "diag_tension_gov_lc": diag_tens_lc if diag_tens_max > _tol else None,
                     "diag_compression_kN": round(abs(diag_comp_max), 3) if diag_comp_max < -_tol else None,

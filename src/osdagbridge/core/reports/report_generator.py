@@ -129,6 +129,8 @@ from .chap6 import ch6_drawings
 from .chap7 import ch7_quantities
 from .chap8 import ch8_design_log
 from .chap9 import references
+from .styles import latex_layout_settings, repeat_longtable_headers
+from .chart_assets import generate_report_charts
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +158,6 @@ def preamble(project_name, job_number, report_date, report_version='Rev 0'):
 \documentclass[12pt,a4paper]{report}
 
 % Packages
-\usepackage[a4paper, margin=1in]{geometry}
 \usepackage{graphicx}
 \usepackage{amsmath}
 \usepackage{amssymb}
@@ -189,29 +190,14 @@ def preamble(project_name, job_number, report_date, report_version='Rev 0'):
 \usepackage{makecell}
 \usepackage{etoolbox}
 \usepackage{needspace}
-
+""" + latex_layout_settings() + r"""
 \numberwithin{table}{chapter}
 \numberwithin{figure}{chapter}
-% Table layout and spacing: consistent padding, row height, and longtable pre/post skips
-\setlength{\tabcolsep}{6pt}
-\renewcommand{\arraystretch}{1.12}
-\setlength{\LTpre}{0pt}
-\setlength{\LTpost}{6pt}
-% Table rules (outline thickness) and small extra row height for clarity
-\setlength{\arrayrulewidth}{0.5pt}
-\setlength{\extrarowheight}{0.6pt}
-
-% Prevent tables from overflowing past the page bottom:
-% if fewer than 5 baseline-skips remain, break to the next page first.
-\BeforeBeginEnvironment{table}{\needspace{5\baselineskip}}
-\BeforeBeginEnvironment{longtable}{\needspace{5\baselineskip}}
-
-\definecolor{osdagGreen}{HTML}{91B014}
 
 \fancypagestyle{main}{
   \fancyhf{}
-  \fancyhead[L]{""" + pn + r""" $|$ """ + jn + r"""}
-  \fancyhead[R]{""" + rd + r""" $|$ """ + rv + r"""}
+  \fancyhead[L]{\parbox[b]{0.64\headwidth}{\raggedright\scriptsize """ + pn + r""" $|$ """ + jn + r"""}}
+  \fancyhead[R]{\parbox[b]{0.34\headwidth}{\raggedleft\scriptsize """ + rd + r""" $|$ """ + rv + r"""}}
   \fancyfoot[L]{Osdag $|$ FOSSEE $|$ Indian Institute of Technology Bombay}
   \fancyfoot[R]{Page \thepage\ of \pageref{LastPage}}
   \renewcommand{\headrule}{\color{osdagGreen}\hrule width\headwidth height 1pt \vspace{2pt}}
@@ -228,8 +214,8 @@ def preamble(project_name, job_number, report_date, report_version='Rev 0'):
 }
 \fancypagestyle{plain}{
   \fancyhf{}
-  \fancyhead[L]{""" + pn + r""" $|$ """ + jn + r"""}
-  \fancyhead[R]{""" + rd + r""" $|$ """ + rv + r"""}
+  \fancyhead[L]{\parbox[b]{0.64\headwidth}{\raggedright\scriptsize """ + pn + r""" $|$ """ + jn + r"""}}
+  \fancyhead[R]{\parbox[b]{0.34\headwidth}{\raggedleft\scriptsize """ + rd + r""" $|$ """ + rv + r"""}}
   \fancyfoot[L]{Osdag $|$ FOSSEE $|$ Indian Institute of Technology Bombay}
   \fancyfoot[R]{Page \thepage\ of \pageref{LastPage}}
   \renewcommand{\headrule}{\color{osdagGreen}\hrule width\headwidth height 1pt \vspace{2pt}}
@@ -594,7 +580,7 @@ class ReportDataBridge:
                 ur = float(val)
                 if ur <= 1.0:
                     return r"\textcolor{black}{PASS}"
-                return r"\textcolor{red}{FAIL}"
+                return r"\textcolor{reportFail}{FAIL}"
         except (TypeError, ValueError):
             pass
         return ""
@@ -898,6 +884,11 @@ def generate_report(payload, request):
             # Compute and inject quantities for Chapter 7
             quantities = calculate_material_quantities(payload.inputs, payload.output_dict)
             payload.inputs.update(quantities)
+            chart_paths = generate_report_charts(payload.output_dict, payload.inputs, os.path.join(tmp_dir, 'report_charts'))
+            fig_paths.update({
+                key: os.path.relpath(path, tmp_dir).replace('\\', '/')
+                for key, path in chart_paths.items()
+            })
 
             # ── Assemble LaTeX document (fig_paths now has tmp_dir paths) ──
             bridge = ReportDataBridge(payload.output_dict, payload.inputs, payload)
@@ -924,11 +915,11 @@ def generate_report(payload, request):
             if 'analysis' in secs:
                 doc_parts.append(ch4_analysis(payload.analysis_summary, fig_paths, bridge, span_m))
             if 'design_checks' in secs:
-                doc_parts.append(ch5_design_checks(payload.design_checks, bridge))
+                doc_parts.append(ch5_design_checks(payload.design_checks, bridge, fig_paths.get('utilization')))
             if 'drawings' in secs and payload.options.include_figures:
                 doc_parts.append(ch6_drawings(fig_paths))
 
-            doc_parts.append(ch7_quantities(payload.inputs))
+            doc_parts.append(ch7_quantities(payload.inputs, fig_paths.get('steel_quantity'), fig_paths.get('concrete_rebar_quantity')))
 
             mode = str(payload.inputs.get(KEY_DESIGN_MODE, "Optimized")).strip().lower()
             is_custom = mode in {"custom", "customized"}
@@ -939,13 +930,12 @@ def generate_report(payload, request):
             doc_parts.append(references())
             doc_parts.append(r"\end{document}")
 
-            full_tex = "\n".join(doc_parts)
+            full_tex = repeat_longtable_headers("\n".join(doc_parts))
 
 
-            # NOTE: longtable header repetition is handled per-table in each
-            # chapter file (e.g. \endfirsthead / \endhead).  No automatic
-            # post-processing is applied here to avoid mis-ordering captions
-            # and column headings.
+            # Apply continuation headings after assembly so generated tables
+            # without explicit first/continuation heads receive the same
+            # treatment as chapter templates that define them directly.
 
             tmp_tex = os.path.join(tmp_dir, request.file_stem + '.tex')
             tmp_pdf = os.path.join(tmp_dir, request.file_stem + '.pdf')

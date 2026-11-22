@@ -384,9 +384,8 @@ def _bracing_tables(input_dict, n_girders):
 \newpage
 
 \vspace{0.4em}
-\setlength{\tabcolsep}{4pt}
-\setlength\LTleft{0pt}
-\setlength\LTright{\fill}
+\ReportCompactTable
+\ReportLeftAlignedLongTable
 
 \begin{longtable}{|L{2.2cm}|L{2.2cm}|L{3.0cm}|L{2.5cm}|C{1.8cm}|C{1.8cm}|}
 \caption{\textbf{Member Properties: Cross Bracing Details}}
@@ -399,9 +398,8 @@ def _bracing_tables(input_dict, n_girders):
 
 \vspace{0.4em}
 \noindent
-\setlength{\tabcolsep}{4pt}
-\setlength\LTleft{0pt}
-\setlength\LTright{\fill}
+\ReportCompactTable
+\ReportLeftAlignedLongTable
 
 \begin{longtable}{|L{2.2cm}|L{2.2cm}|L{3.0cm}|L{2.5cm}|C{1.8cm}|C{1.8cm}|}
 \caption{\textbf{Member Properties: End Diaphragm Details}}

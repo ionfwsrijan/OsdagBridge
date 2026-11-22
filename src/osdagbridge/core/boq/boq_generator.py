@@ -41,6 +41,12 @@ def calculate_material_quantities(inputs: dict, outputs: dict) -> dict:
         "steel_girders_vol_total": "N.A.",
         "steel_girders_wt_single": "N.A.",
         "steel_girders_wt_total": "N.A.",
+
+        "end_diaphragm_vol_formula": "N.A.",
+        "end_diaphragm_qty": "N.A.",
+        "end_diaphragm_vol_total": "N.A.",
+        "end_diaphragm_wt_single": "N.A.",
+        "end_diaphragm_wt_total": "N.A.",
         
         "steel_bracing_vol_formula": r"\placeholder{Area $\times$ Length}",
         "steel_bracing_qty": "N.A.",
@@ -329,6 +335,75 @@ def calculate_material_quantities(inputs: dict, outputs: dict) -> dict:
                 quantities[f"{prefix}_vol_total"] = "N.A."
                 quantities[f"{prefix}_wt_single"] = "N.A."
                 quantities[f"{prefix}_wt_total"] = "N.A."
+
+        # 5b. End diaphragms. Section mass is stored in kg/m by the design
+        # pipeline; lengths and edge counts come from the analyzed end edges.
+        ed_pairs = (outputs.get("end_diaphragm_forces_dict") or {}).get("pairs") or {}
+        ed_mass_kg = 0.0
+        ed_member_count = 0
+        ed_has_quantity = False
+        ed_quantity_complete = True
+
+        def _enabled(value, default=True):
+            if value is None:
+                return default
+            return str(value).strip().lower() not in ("no", "false", "0", "off", "")
+
+        for pair, geometry in ed_pairs.items():
+            pair_id = str(pair).replace("-", "")
+            try:
+                frame_count = int(geometry.get("edge_element_count") or 0)
+                spacing_m = float(geometry.get("chord_length_m") or spacing)
+            except (TypeError, ValueError):
+                ed_quantity_complete = False
+                continue
+            if frame_count <= 0 or spacing_m <= 0:
+                ed_quantity_complete = False
+                continue
+
+            ed_type = str(outputs.get(f"member_properties.end_diaphragm_details.{pair_id}.type", "")).lower()
+            base = "transverse_member_design.ed.section_properties"
+
+            def _add_ed_mass(member_key, member_length, member_multiplier=1):
+                nonlocal ed_mass_kg, ed_member_count, ed_has_quantity
+                mass = outputs.get(f"{base}.{member_key}.{pair_id}.M")
+                try:
+                    mass = float(mass)
+                    member_length = float(member_length)
+                except (TypeError, ValueError):
+                    return False
+                if mass <= 0 or member_length <= 0:
+                    return False
+                count = frame_count * member_multiplier
+                ed_mass_kg += mass * member_length * count
+                ed_member_count += count
+                ed_has_quantity = True
+                return True
+
+            if "cross bracing" in ed_type:
+                diagonal_len = geometry.get("diagonal_length_m")
+                diagonal_count = int(geometry.get("diagonal_count_per_frame") or 2)
+                ed_quantity_complete = _add_ed_mass("end_diaphragm", diagonal_len, diagonal_count) and ed_quantity_complete
+                if _enabled(outputs.get(f"member_properties.end_diaphragm_details.{pair_id}.top_chord")):
+                    ed_quantity_complete = _add_ed_mass("top_chord", spacing_m) and ed_quantity_complete
+                if _enabled(outputs.get(f"member_properties.end_diaphragm_details.{pair_id}.bottom_chord")):
+                    ed_quantity_complete = _add_ed_mass("bottom_chord", spacing_m) and ed_quantity_complete
+            elif "rolled beam" in ed_type or "welded beam" in ed_type:
+                ed_quantity_complete = _add_ed_mass("end_diaphragm", spacing_m) and ed_quantity_complete
+            else:
+                ed_quantity_complete = False
+
+        if ed_has_quantity and ed_quantity_complete and ed_mass_kg > 0:
+            ed_volume = ed_mass_kg / 7850.0
+            # Keep this table cell compact; the full mass-to-volume arithmetic
+            # overran the narrow Volume column when set as one unbreakable math run.
+            quantities["end_diaphragm_vol_formula"] = (
+                chr(36) + f"{ed_volume:.3f}\\,\\mathrm{{m}}^3" + chr(36)
+            )
+            quantities["end_diaphragm_qty"] = str(ed_member_count)
+            quantities["end_diaphragm_vol_total"] = f"{ed_volume:.3f}"
+            quantities["end_diaphragm_wt_single"] = f"{ed_mass_kg / max(ed_member_count, 1) / 1000.0:.4f}"
+            quantities["end_diaphragm_wt_total"] = f"{ed_mass_kg / 1000.0:.3f}"
 
         # 6. Crash Barrier (Cu.m) and Weight (MT)
         KEY_CB_AREA = "typical_section.crash_barrier.area"

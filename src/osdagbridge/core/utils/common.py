@@ -718,6 +718,8 @@ KEY_LL_IRC_AA_TRACKED           = "loading.live_load.irc.aa_tracked"
 KEY_LL_IRC_CLASS_SV             = "loading.live_load.irc.class_sv"
 KEY_LL_IRC_70R_BOGIE            = "loading.live_load.irc.70r_bogie"
 KEY_LL_IRC_CLASS_FATIGUE        = "loading.live_load.irc.class_fatigue"
+KEY_LL_CURVE_RADIUS             = "loading.live_load.centrifugal.curve_radius_m"
+KEY_LL_DESIGN_SPEED             = "loading.live_load.centrifugal.design_speed_kmh"
 
 # Breaking Load keys — mirror the vehicle class keys
 KEY_BL_IRC_CLASS_A        = "bl_irc_class_a"

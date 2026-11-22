@@ -553,6 +553,29 @@ _LIVE_LOAD_TAB_SCHEMA = {
             ],
         },
 
+        {
+            "column": 0,
+            "title": "Centrifugal Load (IRC 6 Cl. 212)",
+            "rows": [
+                {
+                    "fields": [{
+                        "id": KEY_LL_DESIGN_SPEED,
+                        "label": "Design Vehicle Speed (km/h)",
+                        "type": TYPE_TEXTBOX,
+                        "placeholder": "Required for curved bridges",
+                    }]
+                },
+                {
+                    "fields": [{
+                        "id": KEY_LL_CURVE_RADIUS,
+                        "label": "Horizontal Curve Radius (m)",
+                        "type": TYPE_TEXTBOX,
+                        "placeholder": "Required for curved bridges",
+                    }]
+                },
+            ],
+        },
+
         # ── Column 0: Custom Vehicle ────────────────────────────────────────
         # {
         #     "column": 0,
@@ -627,6 +650,8 @@ _LIVE_LOAD_TAB_SCHEMA = {
                 "Braking forces are derived from the live load. For single- or two-lane bridges: 20% of the first train of load plus 10% of succeeding trains in one lane.\nFor bridges with more than two lanes: as above for the first two lanes, plus 5% for each additional lane.\nClass SV does not require a braking load by default, but a checkbox is provided if the user wishes to include it.\n\n"
                 "Braking Load Eccentricity:\n"
                 "As per IRC 6, braking load acts as a horizontal longitudinal force applied at 1.2 m above the top of the deck surface.\n\n"
+                "Centrifugal Load (IRC 6 Cl. 212):\n"
+                "For a curved bridge, enter the design vehicle speed and horizontal curve radius. The report calculates C = WV²/(127R); no impact allowance is added to centrifugal force.\n\n"
                 "Footpath Pressure:\n"
                 "Footpath live load is applied as a uniform pressure per IRC 6. The default value follows the code; the user can switch to 'User-defined' to enter a custom value."
             ),

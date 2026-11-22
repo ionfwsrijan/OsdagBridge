@@ -117,6 +117,7 @@ from osdagbridge.core.utils.common import (
 
     KEY_PL_SELF_WEIGHT_FACTOR, KEY_LL_IRC_CLASS_A, KEY_LL_IRC_70R_WHEELED, KEY_LL_IRC_70R_TRACKED, KEY_LL_IRC_AA_WHEELED,
     KEY_LL_IRC_AA_TRACKED, KEY_LL_IRC_CLASS_SV, KEY_LL_IRC_70R_BOGIE, KEY_LL_IRC_CLASS_FATIGUE, KEY_LL_CUSTOM_VEHICLES,
+    KEY_LL_CURVE_RADIUS, KEY_LL_DESIGN_SPEED,
     KEY_BL_IRC_CLASS_SV,
     KEY_LL_ECCENTRICITY, KEY_LL_FOOTPATH_PRESSURE_MODE, KEY_LL_FOOTPATH_PRESSURE_VALUE, KEY_SL_IMPORTANCE_FACTOR,
     KEY_SL_SOIL_TYPE, KEY_SL_TIME_PERIOD, KEY_SL_DAMPING, KEY_SL_RESPONSE_REDUCTION, KEY_SL_DEAD_LOAD_MODE,
@@ -279,6 +280,8 @@ def _update_loading_tab_defaults(input_dict: dict) -> None:
     # schema default_checked so the table matches the displayed checkbox.
     _update(KEY_BL_IRC_CLASS_SV,            True)
     _update(KEY_LL_CUSTOM_VEHICLES,         [])
+    _update(KEY_LL_CURVE_RADIUS,            "")
+    _update(KEY_LL_DESIGN_SPEED,             "")
     _update(KEY_LL_ECCENTRICITY,            "1.2")
     _update(KEY_LL_FOOTPATH_PRESSURE_MODE,  "As per IRC 6")
     _update(KEY_LL_FOOTPATH_PRESSURE_VALUE, "")
